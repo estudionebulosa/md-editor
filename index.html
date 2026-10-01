@@ -46,58 +46,10 @@
   <script>
     const editor = document.getElementById('editor');
     
-    // Cargar contenido de ejemplo
-    editor.load({
-      content: `# Bienvenido al Editor de Markdown
-
-Este es un **editor de Markdown** completo con soporte para:
-
-## Características
-
-- ✅ Modo código y vista previa
-- ✅ Temas claro y oscuro
-- ✅ Exportar a HTML, PDF y Markdown
-- ✅ Tags y slugs
-- ✅ Imágenes inline (base64)
-
-## Ejemplo de Código
-
-\`\`\`javascript
-function hello() {
-  console.log('Hello, World!');
-}
-\`\`\`
-
-## Tabla de Ejemplo
-
-| Característica | Estado |
-|---------------|--------|
-| Dual Mode | ✅ |
-| Themes | ✅ |
-| Export | ✅ |
-
-> [!tip]
-> Puedes arrastrar y soltar imágenes directamente en el editor.
-
-## Preguntas Frecuentes
-
-::: faq
-### ¿Qué es esto?
-Un editor de Markdown basado en Web Components.
-
-### ¿Cómo lo uso?
-Simplemente escribe Markdown y cambia entre modo código y vista previa.
-:::
-
-Más información en la [documentación](https://github.com/estudionebulosa/nebulosa).
-`,
-      path: 'ejemplo.md',
-      frontmatter: {
-        title: 'Ejemplo de Markdown',
-        tags: ['markdown', 'editor', 'web-components'],
-        slug: 'ejemplo-markdown'
-      }
-    });
+    // Cargar automáticamente el archivo de ejemplo al inicio
+    setTimeout(() => {
+      editor.loadFileFromRepo('./content/ejemplo-completo.md');
+    }, 500);
     
     // Escuchar eventos
     editor.addEventListener('save', (e) => {
@@ -106,6 +58,10 @@ Más información en la [documentación](https://github.com/estudionebulosa/nebu
     
     editor.addEventListener('change', (e) => {
       console.log('Contenido modificado:', e.detail.dirty);
+    });
+    
+    editor.addEventListener('file-loaded', (e) => {
+      console.log('Archivo cargado:', e.detail.path);
     });
   </script>
 </body>

@@ -21,6 +21,8 @@ class MarkdownEditor extends HTMLElement {
     this._frontmatter = {};
     this._path = '';
     this._dirty = false;
+    this._files = [];
+    this._sidebarOpen = false;
     
     // Instancias de modos
     this.codeMode = null;
@@ -35,6 +37,7 @@ class MarkdownEditor extends HTMLElement {
     this.render();
     this.setupEventListeners();
     this.detectSystemTheme();
+    this.loadFileList();
   }
   
   disconnectedCallback() {
@@ -96,6 +99,38 @@ class MarkdownEditor extends HTMLElement {
   }
   
   // Métodos privados
+  async loadFileList() {
+    try {
+      const response = await fetch('./content/files.json');
+      const data = await response.json();
+      this._files = data.files || [];
+      this.updateFileListUI();
+    } catch (error) {
+      console.error('Error loading file list:', error);
+    }
+  }
+  
+  async loadFileFromRepo(filePath) {
+    try {
+      const response = await fetch(filePath);
+      const content = await response.text();
+      const { frontmatter, content: markdown } = parseFrontmatter(content);
+      
+      this.load({
+        content: markdown,
+        path: filePath,
+        frontmatter
+      });
+      
+      this.dispatchEvent(new CustomEvent('file-loaded', {
+        detail: { path: filePath }
+      }));
+    } catch (error) {
+      console.error('Error loading file:', error);
+      alert('Error al cargar el archivo: ' + error.message);
+    }
+  }
+  
   render() {
     const styles = `
       <style>
@@ -108,6 +143,7 @@ class MarkdownEditor extends HTMLElement {
           --editor-border: #e0e0e0;
           --editor-toolbar-bg: #f8f9fa;
           --editor-button-hover: #e9ecef;
+          --sidebar-width: 280px;
         }
         
         :host([theme="dark"]) {
@@ -119,15 +155,103 @@ class MarkdownEditor extends HTMLElement {
           --editor-button-hover: #3e3e3e;
         }
         
-        .editor-container {
+        .editor-wrapper {
           display: flex;
-          flex-direction: column;
           height: 100%;
           min-height: 600px;
+          position: relative;
+        }
+        
+        .sidebar {
+          width: 0;
+          overflow: hidden;
+          background: var(--editor-toolbar-bg);
+          border-right: 1px solid var(--editor-border);
+          transition: width 0.3s ease;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .sidebar.open {
+          width: var(--sidebar-width);
+        }
+        
+        .sidebar-header {
+          padding: 16px;
+          border-bottom: 1px solid var(--editor-border);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        
+        .sidebar-header h3 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 600;
+        }
+        
+        .sidebar-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 12px;
+        }
+        
+        .file-item {
+          padding: 12px;
+          margin-bottom: 8px;
+          background: var(--editor-bg);
+          border: 1px solid var(--editor-border);
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        
+        .file-item:hover {
+          border-color: var(--editor-accent);
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .file-item-name {
+          font-weight: 600;
+          margin-bottom: 4px;
+          color: var(--editor-text);
+        }
+        
+        .file-item-desc {
+          font-size: 12px;
+          opacity: 0.7;
+        }
+        
+        .sidebar-actions {
+          padding: 12px;
+          border-top: 1px solid var(--editor-border);
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        
+        .sidebar-actions button {
+          padding: 10px;
+          border: 1px solid var(--editor-border);
           background: var(--editor-bg);
           color: var(--editor-text);
-          border: 1px solid var(--editor-border);
-          border-radius: 8px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: all 0.2s;
+        }
+        
+        .sidebar-actions button:hover {
+          background: var(--editor-button-hover);
+          border-color: var(--editor-accent);
+        }
+        
+        .editor-container {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          background: var(--editor-bg);
+          color: var(--editor-text);
           overflow: hidden;
         }
         
@@ -259,7 +383,17 @@ class MarkdownEditor extends HTMLElement {
           outline: none;
         }
         
+        .hidden-input {
+          display: none;
+        }
+        
         @media (max-width: 768px) {
+          .sidebar.open {
+            position: absolute;
+            z-index: 10;
+            height: 100%;
+          }
+          
           .toolbar {
             padding: 8px 12px;
           }
@@ -273,56 +407,79 @@ class MarkdownEditor extends HTMLElement {
     `;
     
     const template = `
-      <div class="editor-container">
-        <div class="toolbar">
-          <div class="toolbar-group">
-            <button data-mode="code" class="${this._mode === 'code' ? 'active' : ''}">
-              ✏️ Código
-            </button>
-            <button data-mode="preview" class="${this._mode === 'preview' ? 'active' : ''}">
-              👁️ Vista Previa
-            </button>
+      <div class="editor-wrapper">
+        <aside class="sidebar ${this._sidebarOpen ? 'open' : ''}" id="sidebar">
+          <div class="sidebar-header">
+            <h3>📁 Archivos</h3>
           </div>
-          
-          <div class="toolbar-group">
-            <button data-action="theme-toggle" title="Cambiar tema">
-              🌓 Tema
-            </button>
+          <div class="sidebar-content" id="file-list">
+            ${this.renderFileList()}
           </div>
-          
-          <div class="toolbar-group">
-            <button data-action="export-html" title="Exportar como HTML">
-              📄 HTML
-            </button>
-            <button data-action="export-pdf" title="Exportar como PDF">
-              📋 PDF
-            </button>
-            <button data-action="export-md" title="Guardar como Markdown">
-              💾 MD
-            </button>
+          <div class="sidebar-actions">
+            <button data-action="open-local">📂 Abrir archivo local</button>
+            <button data-action="save-file">💾 Guardar archivo</button>
           </div>
-        </div>
+        </aside>
         
-        <div class="metadata">
-          <div class="metadata-row">
-            <div class="metadata-item">
-              <span class="metadata-label">Ruta:</span>
-              <span class="metadata-value" id="path-display">${this._path || 'Sin archivo'}</span>
+        <div class="editor-container">
+          <div class="toolbar">
+            <div class="toolbar-group">
+              <button data-action="toggle-sidebar" title="Mostrar/ocultar archivos">
+                📁
+              </button>
             </div>
-            <div class="metadata-item">
-              <span class="metadata-label">Tags:</span>
-              <div class="tags-container" id="tags-display">
-                ${this.renderTags()}
+            
+            <div class="toolbar-group">
+              <button data-mode="code" class="${this._mode === 'code' ? 'active' : ''}">
+                ✏️ Código
+              </button>
+              <button data-mode="preview" class="${this._mode === 'preview' ? 'active' : ''}">
+                👁️ Vista Previa
+              </button>
+            </div>
+            
+            <div class="toolbar-group">
+              <button data-action="theme-toggle" title="Cambiar tema">
+                🌓 Tema
+              </button>
+            </div>
+            
+            <div class="toolbar-group">
+              <button data-action="export-html" title="Exportar como HTML">
+                📄 HTML
+              </button>
+              <button data-action="export-pdf" title="Exportar como PDF">
+                📋 PDF
+              </button>
+              <button data-action="export-md" title="Guardar como Markdown">
+                💾 MD
+              </button>
+            </div>
+          </div>
+          
+          <div class="metadata">
+            <div class="metadata-row">
+              <div class="metadata-item">
+                <span class="metadata-label">Ruta:</span>
+                <span class="metadata-value" id="path-display">${this._path || 'Sin archivo'}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Tags:</span>
+                <div class="tags-container" id="tags-display">
+                  ${this.renderTags()}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        
-        <div class="editor-content">
-          <div class="mode-container ${this._mode === 'code' ? 'active' : ''}" id="code-mode"></div>
-          <div class="mode-container ${this._mode === 'preview' ? 'active' : ''}" id="preview-mode"></div>
+          
+          <div class="editor-content">
+            <div class="mode-container ${this._mode === 'code' ? 'active' : ''}" id="code-mode"></div>
+            <div class="mode-container ${this._mode === 'preview' ? 'active' : ''}" id="preview-mode"></div>
+          </div>
         </div>
       </div>
+      
+      <input type="file" class="hidden-input" id="file-input" accept=".md,.markdown,.txt" />
     `;
     
     this.shadowRoot.innerHTML = styles + template;
@@ -357,6 +514,26 @@ class MarkdownEditor extends HTMLElement {
     }
   }
   
+  renderFileList() {
+    if (this._files.length === 0) {
+      return '<p style="text-align: center; opacity: 0.5;">No hay archivos disponibles</p>';
+    }
+    
+    return this._files.map(file => `
+      <div class="file-item" data-file-path="${file.path}">
+        <div class="file-item-name">${file.name}</div>
+        <div class="file-item-desc">${file.description || ''}</div>
+      </div>
+    `).join('');
+  }
+  
+  updateFileListUI() {
+    const fileList = this.shadowRoot.getElementById('file-list');
+    if (fileList) {
+      fileList.innerHTML = this.renderFileList();
+    }
+  }
+  
   renderTags() {
     const tags = this._frontmatter.tags || [];
     if (tags.length === 0) {
@@ -385,8 +562,15 @@ class MarkdownEditor extends HTMLElement {
   }
   
   setupEventListeners() {
-    // Modo de edición
+    // Click handler principal
     this.shadowRoot.addEventListener('click', (e) => {
+      // Toggle sidebar
+      if (e.target.closest('[data-action="toggle-sidebar"]')) {
+        this.toggleSidebar();
+        return;
+      }
+      
+      // Modo de edición
       const modeBtn = e.target.closest('[data-mode]');
       if (modeBtn) {
         this.setMode(modeBtn.dataset.mode);
@@ -401,7 +585,8 @@ class MarkdownEditor extends HTMLElement {
       
       // Exportar
       if (e.target.closest('[data-action="export-html"]')) {
-        exportHTML(this._content, this._frontmatter);
+        const previewHTML = this.previewMode.getHTML();
+        exportHTML(previewHTML, this._frontmatter);
         return;
       }
       
@@ -417,6 +602,21 @@ class MarkdownEditor extends HTMLElement {
         return;
       }
       
+      // Abrir archivo local
+      if (e.target.closest('[data-action="open-local"]')) {
+        const fileInput = this.shadowRoot.getElementById('file-input');
+        fileInput.click();
+        return;
+      }
+      
+      // Guardar archivo
+      if (e.target.closest('[data-action="save-file"]')) {
+        const fullContent = serializeFrontmatter(this._frontmatter) + this._content;
+        const filename = this._path ? this._path.split('/').pop() : 'documento.md';
+        exportMD(fullContent, filename);
+        return;
+      }
+      
       // Eliminar tag
       const tagRemove = e.target.closest('.tag-remove');
       if (tagRemove) {
@@ -424,11 +624,57 @@ class MarkdownEditor extends HTMLElement {
         this.removeTag(index);
         return;
       }
+      
+      // Cargar archivo desde la lista
+      const fileItem = e.target.closest('.file-item');
+      if (fileItem) {
+        const filePath = fileItem.dataset.filePath;
+        this.loadFileFromRepo(filePath);
+        return;
+      }
     });
+    
+    // File input change
+    const fileInput = this.shadowRoot.getElementById('file-input');
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          this.loadLocalFile(file);
+        }
+      });
+    }
+  }
+  
+  async loadLocalFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target.result;
+      const { frontmatter, content: markdown } = parseFrontmatter(content);
+      
+      this.load({
+        content: markdown,
+        path: file.name,
+        frontmatter
+      });
+      
+      this.dispatchEvent(new CustomEvent('file-loaded', {
+        detail: { path: file.name }
+      }));
+    };
+    reader.readAsText(file);
   }
   
   cleanupEventListeners() {
     // Limpieza si es necesaria
+  }
+  
+  toggleSidebar() {
+    this._sidebarOpen = !this._sidebarOpen;
+    const sidebar = this.shadowRoot.getElementById('sidebar');
+    if (sidebar) {
+      sidebar.classList.toggle('open', this._sidebarOpen);
+    }
   }
   
   setMode(mode) {
