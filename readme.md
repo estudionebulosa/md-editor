@@ -133,7 +133,7 @@ editor/
 
 ## 📜 Changelog
 
-### [0.1.0] - 2026-01-XX
+### [0.1.0] - 2026-10-01
 **Initial Release**
 - Web Component architecture with Shadow DOM
 - Dual mode: code (CodeMirror 6) and preview (markdown-it)
