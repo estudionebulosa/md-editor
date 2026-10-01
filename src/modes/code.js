@@ -25,6 +25,11 @@ export class CodeMode {
       import('https://esm.sh/@codemirror/theme-one-dark@6')
     ]);
     
+    // Asegurar que el contenedor tenga dimensiones
+    this.container.style.width = '100%';
+    this.container.style.height = '100%';
+    this.container.style.position = 'relative';
+    
     const startDoc = '';
     
     const state = EditorState.create({
@@ -43,12 +48,24 @@ export class CodeMode {
         }),
         EditorView.theme({
           '&': {
-            height: '100%',
+            height: '100% !important',
+            width: '100% !important',
             fontSize: '14px'
           },
           '.cm-scroller': {
-            overflow: 'auto',
-            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace'
+            overflow: 'auto !important',
+            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+            height: '100% !important'
+          },
+          '.cm-content': {
+            minHeight: '100%',
+            cursor: 'text !important'
+          },
+          '.cm-editor': {
+            outline: 'none !important'
+          },
+          '.cm-editor.cm-focused': {
+            outline: 'none !important'
           }
         })
       ]
@@ -58,6 +75,13 @@ export class CodeMode {
       state,
       parent: this.container
     });
+    
+    // Enfocar el editor después de montarlo
+    setTimeout(() => {
+      if (this.view) {
+        this.view.focus();
+      }
+    }, 100);
   }
   
   setContent(content) {

@@ -239,10 +239,24 @@ class MarkdownEditor extends HTMLElement {
           right: 0;
           bottom: 0;
           display: none;
+          overflow: hidden;
         }
         
         .mode-container.active {
           display: block;
+        }
+        
+        #code-mode {
+          display: none;
+        }
+        
+        #code-mode.active {
+          display: flex;
+          flex-direction: column;
+        }
+        
+        #code-mode :focus {
+          outline: none;
         }
         
         @media (max-width: 768px) {
