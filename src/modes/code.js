@@ -1,111 +1,86 @@
 /**
- * Code Mode - CodeMirror 6 wrapper
- * Editor de código con resaltado de sintaxis para Markdown
+ * Code Mode - Simple textarea editor for MVP
+ * Editor de código simple con textarea
  */
 
 export class CodeMode {
   constructor(container, onChange) {
     this.container = container;
     this.onChange = onChange;
-    this.view = null;
+    this.textarea = null;
     this.init();
   }
   
-  async init() {
-    // Importar CodeMirror 6 desde CDN
-    const [
-      { EditorView, basicSetup },
-      { EditorState },
-      { markdown },
-      { oneDark }
-    ] = await Promise.all([
-      import('https://esm.sh/@codemirror/view@6'),
-      import('https://esm.sh/@codemirror/state@6'),
-      import('https://esm.sh/@codemirror/lang-markdown@6'),
-      import('https://esm.sh/@codemirror/theme-one-dark@6')
-    ]);
+  init() {
+    // Crear textarea
+    this.textarea = document.createElement('textarea');
+    this.textarea.className = 'code-editor-textarea';
+    this.textarea.spellcheck = false;
+    this.textarea.autocapitalize = 'off';
+    this.textarea.autocomplete = 'off';
     
-    // Asegurar que el contenedor tenga dimensiones
-    this.container.style.width = '100%';
-    this.container.style.height = '100%';
-    this.container.style.position = 'relative';
-    
-    const startDoc = '';
-    
-    const state = EditorState.create({
-      doc: startDoc,
-      extensions: [
-        basicSetup,
-        markdown(),
-        oneDark,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            const content = update.state.doc.toString();
-            if (this.onChange) {
-              this.onChange(content);
-            }
-          }
-        }),
-        EditorView.theme({
-          '&': {
-            height: '100% !important',
-            width: '100% !important',
-            fontSize: '14px'
-          },
-          '.cm-scroller': {
-            overflow: 'auto !important',
-            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-            height: '100% !important'
-          },
-          '.cm-content': {
-            minHeight: '100%',
-            cursor: 'text !important'
-          },
-          '.cm-editor': {
-            outline: 'none !important'
-          },
-          '.cm-editor.cm-focused': {
-            outline: 'none !important'
-          }
-        })
-      ]
+    // Estilos inline para el textarea
+    Object.assign(this.textarea.style, {
+      width: '100%',
+      height: '100%',
+      padding: '16px',
+      border: 'none',
+      outline: 'none',
+      resize: 'none',
+      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+      fontSize: '14px',
+      lineHeight: '1.6',
+      backgroundColor: 'var(--editor-bg, #ffffff)',
+      color: 'var(--editor-text, #1a1a1a)',
+      tabSize: '2'
     });
     
-    this.view = new EditorView({
-      state,
-      parent: this.container
-    });
-    
-    // Enfocar el editor después de montarlo
-    setTimeout(() => {
-      if (this.view) {
-        this.view.focus();
+    // Event listener para cambios
+    this.textarea.addEventListener('input', (e) => {
+      if (this.onChange) {
+        this.onChange(e.target.value);
       }
-    }, 100);
+    });
+    
+    // Soporte para Tab key
+    this.textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = e.target.selectionStart;
+        const end = e.target.selectionEnd;
+        const value = e.target.value;
+        
+        e.target.value = value.substring(0, start) + '  ' + value.substring(end);
+        e.target.selectionStart = e.target.selectionEnd = start + 2;
+        
+        if (this.onChange) {
+          this.onChange(e.target.value);
+        }
+      }
+    });
+    
+    // Agregar al contenedor
+    this.container.appendChild(this.textarea);
+    
+    // Enfocar después de un breve delay
+    setTimeout(() => {
+      this.textarea.focus();
+    }, 150);
   }
   
   setContent(content) {
-    if (!this.view) return;
-    
-    const transaction = this.view.state.update({
-      changes: {
-        from: 0,
-        to: this.view.state.doc.length,
-        insert: content
-      }
-    });
-    
-    this.view.dispatch(transaction);
+    if (this.textarea) {
+      this.textarea.value = content;
+    }
   }
   
   getContent() {
-    if (!this.view) return '';
-    return this.view.state.doc.toString();
+    return this.textarea ? this.textarea.value : '';
   }
   
   destroy() {
-    if (this.view) {
-      this.view.destroy();
+    if (this.textarea && this.textarea.parentNode) {
+      this.textarea.parentNode.removeChild(this.textarea);
     }
   }
 }
