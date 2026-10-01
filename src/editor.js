@@ -331,19 +331,28 @@ class MarkdownEditor extends HTMLElement {
     const codeContainer = this.shadowRoot.getElementById('code-mode');
     const previewContainer = this.shadowRoot.getElementById('preview-mode');
     
-    this.codeMode = new CodeMode(codeContainer, (content) => {
-      this._content = content;
-      this._dirty = true;
-      this.dispatchEvent(new CustomEvent('change', { 
-        detail: { content, dirty: true } 
-      }));
-    });
+    // Inicializar CodeMode con delay para asegurar que el contenedor sea visible
+    setTimeout(() => {
+      this.codeMode = new CodeMode(codeContainer, (content) => {
+        this._content = content;
+        this._dirty = true;
+        this.dispatchEvent(new CustomEvent('change', { 
+          detail: { content, dirty: true } 
+        }));
+      });
+      
+      // Renderizar contenido inicial si existe
+      if (this._content) {
+        setTimeout(() => {
+          this.codeMode.setContent(this._content);
+        }, 200);
+      }
+    }, 100);
     
     this.previewMode = new PreviewMode(previewContainer);
     
-    // Renderizar contenido inicial
+    // Renderizar preview inicial
     if (this._content) {
-      this.codeMode.setContent(this._content);
       this.previewMode.render(this._content, this._frontmatter);
     }
   }
