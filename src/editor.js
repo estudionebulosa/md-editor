@@ -8,6 +8,7 @@ import { PreviewMode } from './modes/preview.js';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter.js';
 import { exportHTML, exportPDF, exportMD } from './export.js';
 import { getTheme, setTheme, toggleTheme } from './themes.js';
+import './file-explorer.js'; // Importar el componente file-explorer
 
 class MarkdownEditor extends HTMLElement {
   constructor() {
@@ -21,23 +22,23 @@ class MarkdownEditor extends HTMLElement {
     this._frontmatter = {};
     this._path = '';
     this._dirty = false;
-    this._files = [];
     this._sidebarOpen = false;
     
     // Instancias de modos
     this.codeMode = null;
     this.previewMode = null;
+    this.fileExplorer = null;
   }
   
   static get observedAttributes() {
-    return ['theme', 'mode'];
+    return ['theme', 'mode', 'storage-mode', 'github-repo'];
   }
   
   connectedCallback() {
     this.render();
     this.setupEventListeners();
     this.detectSystemTheme();
-    this.loadFileList();
+    this.initializeFileExplorer();
   }
   
   disconnectedCallback() {
@@ -53,6 +54,16 @@ class MarkdownEditor extends HTMLElement {
         break;
       case 'mode':
         this.setMode(newValue);
+        break;
+      case 'storage-mode':
+        if (this.fileExplorer) {
+          this.fileExplorer.setAttribute('storage-mode', newValue);
+        }
+        break;
+      case 'github-repo':
+        if (this.fileExplorer) {
+          this.fileExplorer.setAttribute('github-repo', newValue);
+        }
         break;
     }
   }
@@ -99,35 +110,100 @@ class MarkdownEditor extends HTMLElement {
   }
   
   // Métodos privados
-  async loadFileList() {
-    try {
-      const response = await fetch('./content/files.json');
-      const data = await response.json();
-      this._files = data.files || [];
-      this.updateFileListUI();
-    } catch (error) {
-      console.error('Error loading file list:', error);
+  initializeFileExplorer() {
+    this.fileExplorer = this.shadowRoot.querySelector('file-explorer');
+    
+    if (this.fileExplorer) {
+      // Pasar configuración inicial
+      const storageMode = this.getAttribute('storage-mode') || 'local';
+      const githubRepo = this.getAttribute('github-repo');
+      
+      if (githubRepo) {
+        this.fileExplorer.setAttribute('github-repo', githubRepo);
+      }
+      
+      // Escuchar eventos del file-explorer
+      this.fileExplorer.addEventListener('file-selected', async (e) => {
+        const file = e.detail.file;
+        await this.handleFileSelected(file);
+      });
+      
+      this.fileExplorer.addEventListener('file-created', (e) => {
+        const file = e.detail.file;
+        this.dispatchEvent(new CustomEvent('file-created', {
+          detail: { file }
+        }));
+      });
+      
+      this.fileExplorer.addEventListener('file-updated', (e) => {
+        const file = e.detail.file;
+        this.dispatchEvent(new CustomEvent('file-updated', {
+          detail: { file }
+        }));
+      });
+      
+      this.fileExplorer.addEventListener('file-deleted', (e) => {
+        const file = e.detail.file;
+        this.dispatchEvent(new CustomEvent('file-deleted', {
+          detail: { file }
+        }));
+      });
+      
+      this.fileExplorer.addEventListener('error', (e) => {
+        this.dispatchEvent(new CustomEvent('error', {
+          detail: e.detail
+        }));
+      });
     }
   }
   
-  async loadFileFromRepo(filePath) {
+  async handleFileSelected(file) {
     try {
-      const response = await fetch(filePath);
-      const content = await response.text();
-      const { frontmatter, content: markdown } = parseFrontmatter(content);
+      // Si el archivo no tiene contenido, cargarlo
+      if (!file.content && this.fileExplorer) {
+        if (this.fileExplorer.loadFileContent) {
+          await this.fileExplorer.loadFileContent(file);
+        }
+      }
       
+      // Parsear frontmatter si existe
+      const { frontmatter, content } = parseFrontmatter(file.content || '');
+      
+      // Cargar en el editor
       this.load({
-        content: markdown,
-        path: filePath,
+        content,
+        path: file.name,
         frontmatter
       });
       
       this.dispatchEvent(new CustomEvent('file-loaded', {
-        detail: { path: filePath }
+        detail: { file, path: file.name }
       }));
     } catch (error) {
       console.error('Error loading file:', error);
-      alert('Error al cargar el archivo: ' + error.message);
+      this.dispatchEvent(new CustomEvent('error', {
+        detail: { message: error.message }
+      }));
+    }
+  }
+  
+  async saveCurrentFile() {
+    if (!this._path || !this.fileExplorer) {
+      throw new Error('No file is currently loaded');
+    }
+    
+    const fullContent = serializeFrontmatter(this._frontmatter) + this._content;
+    
+    try {
+      await this.fileExplorer.updateFile(this._path, fullContent, this._frontmatter);
+      this._dirty = false;
+      
+      this.dispatchEvent(new CustomEvent('file-saved', {
+        detail: { path: this._path }
+      }));
+    } catch (error) {
+      console.error('Error saving file:', error);
+      throw error;
     }
   }
   
@@ -143,7 +219,7 @@ class MarkdownEditor extends HTMLElement {
           --editor-border: #e0e0e0;
           --editor-toolbar-bg: #f8f9fa;
           --editor-button-hover: #e9ecef;
-          --sidebar-width: 280px;
+          --sidebar-width: 300px;
         }
         
         :host([theme="dark"]) {
@@ -165,8 +241,6 @@ class MarkdownEditor extends HTMLElement {
         .sidebar {
           width: 0;
           overflow: hidden;
-          background: var(--editor-toolbar-bg);
-          border-right: 1px solid var(--editor-border);
           transition: width 0.3s ease;
           display: flex;
           flex-direction: column;
@@ -174,76 +248,6 @@ class MarkdownEditor extends HTMLElement {
         
         .sidebar.open {
           width: var(--sidebar-width);
-        }
-        
-        .sidebar-header {
-          padding: 16px;
-          border-bottom: 1px solid var(--editor-border);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        
-        .sidebar-header h3 {
-          margin: 0;
-          font-size: 16px;
-          font-weight: 600;
-        }
-        
-        .sidebar-content {
-          flex: 1;
-          overflow-y: auto;
-          padding: 12px;
-        }
-        
-        .file-item {
-          padding: 12px;
-          margin-bottom: 8px;
-          background: var(--editor-bg);
-          border: 1px solid var(--editor-border);
-          border-radius: 6px;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        
-        .file-item:hover {
-          border-color: var(--editor-accent);
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        
-        .file-item-name {
-          font-weight: 600;
-          margin-bottom: 4px;
-          color: var(--editor-text);
-        }
-        
-        .file-item-desc {
-          font-size: 12px;
-          opacity: 0.7;
-        }
-        
-        .sidebar-actions {
-          padding: 12px;
-          border-top: 1px solid var(--editor-border);
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        
-        .sidebar-actions button {
-          padding: 10px;
-          border: 1px solid var(--editor-border);
-          background: var(--editor-bg);
-          color: var(--editor-text);
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 14px;
-          transition: all 0.2s;
-        }
-        
-        .sidebar-actions button:hover {
-          background: var(--editor-button-hover);
-          border-color: var(--editor-accent);
         }
         
         .editor-container {
@@ -409,16 +413,10 @@ class MarkdownEditor extends HTMLElement {
     const template = `
       <div class="editor-wrapper">
         <aside class="sidebar ${this._sidebarOpen ? 'open' : ''}" id="sidebar">
-          <div class="sidebar-header">
-            <h3>📁 Archivos</h3>
-          </div>
-          <div class="sidebar-content" id="file-list">
-            ${this.renderFileList()}
-          </div>
-          <div class="sidebar-actions">
-            <button data-action="open-local">📂 Abrir archivo local</button>
-            <button data-action="save-file">💾 Guardar archivo</button>
-          </div>
+          <file-explorer 
+            storage-mode="${this.getAttribute('storage-mode') || 'local'}"
+            ${this.getAttribute('github-repo') ? `github-repo="${this.getAttribute('github-repo')}"` : ''}
+          ></file-explorer>
         </aside>
         
         <div class="editor-container">
@@ -445,14 +443,20 @@ class MarkdownEditor extends HTMLElement {
             </div>
             
             <div class="toolbar-group">
+              <button data-action="save-file" title="Guardar archivo">
+                💾 Guardar
+              </button>
+            </div>
+            
+            <div class="toolbar-group">
               <button data-action="export-html" title="Exportar como HTML">
                 📄 HTML
               </button>
               <button data-action="export-pdf" title="Exportar como PDF">
                 📋 PDF
               </button>
-              <button data-action="export-md" title="Guardar como Markdown">
-                💾 MD
+              <button data-action="export-md" title="Descargar como Markdown">
+                ⬇️ MD
               </button>
             </div>
           </div>
@@ -514,26 +518,6 @@ class MarkdownEditor extends HTMLElement {
     }
   }
   
-  renderFileList() {
-    if (this._files.length === 0) {
-      return '<p style="text-align: center; opacity: 0.5;">No hay archivos disponibles</p>';
-    }
-    
-    return this._files.map(file => `
-      <div class="file-item" data-file-path="${file.path}">
-        <div class="file-item-name">${file.name}</div>
-        <div class="file-item-desc">${file.description || ''}</div>
-      </div>
-    `).join('');
-  }
-  
-  updateFileListUI() {
-    const fileList = this.shadowRoot.getElementById('file-list');
-    if (fileList) {
-      fileList.innerHTML = this.renderFileList();
-    }
-  }
-  
   renderTags() {
     const tags = this._frontmatter.tags || [];
     if (tags.length === 0) {
@@ -583,6 +567,14 @@ class MarkdownEditor extends HTMLElement {
         return;
       }
       
+      // Guardar archivo
+      if (e.target.closest('[data-action="save-file"]')) {
+        this.saveCurrentFile().catch(error => {
+          alert('Error al guardar: ' + error.message);
+        });
+        return;
+      }
+      
       // Exportar
       if (e.target.closest('[data-action="export-html"]')) {
         const previewHTML = this.previewMode.getHTML();
@@ -598,21 +590,7 @@ class MarkdownEditor extends HTMLElement {
       
       if (e.target.closest('[data-action="export-md"]')) {
         const fullContent = serializeFrontmatter(this._frontmatter) + this._content;
-        exportMD(fullContent, this._path || 'documento.md');
-        return;
-      }
-      
-      // Abrir archivo local
-      if (e.target.closest('[data-action="open-local"]')) {
-        const fileInput = this.shadowRoot.getElementById('file-input');
-        fileInput.click();
-        return;
-      }
-      
-      // Guardar archivo
-      if (e.target.closest('[data-action="save-file"]')) {
-        const fullContent = serializeFrontmatter(this._frontmatter) + this._content;
-        const filename = this._path ? this._path.split('/').pop() : 'documento.md';
+        const filename = this._path || 'documento.md';
         exportMD(fullContent, filename);
         return;
       }
@@ -624,45 +602,7 @@ class MarkdownEditor extends HTMLElement {
         this.removeTag(index);
         return;
       }
-      
-      // Cargar archivo desde la lista
-      const fileItem = e.target.closest('.file-item');
-      if (fileItem) {
-        const filePath = fileItem.dataset.filePath;
-        this.loadFileFromRepo(filePath);
-        return;
-      }
     });
-    
-    // File input change
-    const fileInput = this.shadowRoot.getElementById('file-input');
-    if (fileInput) {
-      fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          this.loadLocalFile(file);
-        }
-      });
-    }
-  }
-  
-  async loadLocalFile(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const content = e.target.result;
-      const { frontmatter, content: markdown } = parseFrontmatter(content);
-      
-      this.load({
-        content: markdown,
-        path: file.name,
-        frontmatter
-      });
-      
-      this.dispatchEvent(new CustomEvent('file-loaded', {
-        detail: { path: file.name }
-      }));
-    };
-    reader.readAsText(file);
   }
   
   cleanupEventListeners() {
@@ -709,6 +649,11 @@ class MarkdownEditor extends HTMLElement {
     this._theme = theme;
     this.setAttribute('theme', theme);
     setTheme(theme);
+    
+    // Pasar tema al file-explorer
+    if (this.fileExplorer) {
+      this.fileExplorer.setAttribute('theme', theme);
+    }
     
     this.dispatchEvent(new CustomEvent('theme-change', { 
       detail: { theme } 

@@ -15,12 +15,12 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: #f5f5f5;
       min-height: 100vh;
+      padding: 20px;
     }
     
     .container {
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
-      padding: 20px;
     }
     
     h1 {
@@ -29,40 +29,268 @@
       color: #333;
     }
     
+    .info-panel {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .info-panel h2 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      color: #333;
+    }
+    
+    .info-panel p {
+      margin-bottom: 8px;
+      line-height: 1.6;
+      color: #666;
+    }
+    
+    .info-panel code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    
+    .config-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+    
+    .config-section h3 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #333;
+    }
+    
+    .config-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    .config-row label {
+      font-weight: 600;
+      min-width: 120px;
+      color: #333;
+    }
+    
+    .config-row select,
+    .config-row input {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .config-row button {
+      padding: 8px 16px;
+      background: #0066cc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .config-row button:hover {
+      background: #0052a3;
+    }
+    
     markdown-editor {
       display: block;
       width: 100%;
+      height: calc(100vh - 300px);
       min-height: 600px;
+    }
+    
+    .status-bar {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 20px;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #666;
+    }
+    
+    .status-bar strong {
+      color: #333;
+    }
+    
+    @media (max-width: 768px) {
+      body {
+        padding: 10px;
+      }
+      
+      markdown-editor {
+        height: calc(100vh - 400px);
+      }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>📝 Markdown Editor</h1>
-    <markdown-editor id="editor"></markdown-editor>
+    
+    <div class="info-panel">
+      <h2>🎯 Características del Explorador de Archivos</h2>
+      <p>El editor incluye un <strong>explorador de archivos interoperable</strong> que se comunica mediante eventos personalizados.</p>
+      <p><strong>Modos de almacenamiento disponibles:</strong></p>
+      <ul style="margin-left: 20px; margin-top: 8px;">
+        <li><code>local</code> - Almacenamiento en localStorage del navegador (por defecto)</li>
+        <li><code>github</code> - Sincronización con repositorio de GitHub (requiere token)</li>
+        <li><code>hybrid</code> - Combinación de ambos (GitHub + fallback local)</li>
+      </ul>
+      
+      <div class="config-section">
+        <h3>⚙️ Configuración</h3>
+        
+        <div class="config-row">
+          <label>Modo de almacenamiento:</label>
+          <select id="storage-mode">
+            <option value="local" selected>Local (localStorage)</option>
+            <option value="github">GitHub API</option>
+            <option value="hybrid">Híbrido (GitHub + Local)</option>
+          </select>
+        </div>
+        
+        <div class="config-row">
+          <label>Repositorio GitHub:</label>
+          <input type="text" id="github-repo" placeholder="usuario/repo" value="estudionebulosa/md-editor">
+        </div>
+        
+        <div class="config-row">
+          <label>Token de acceso:</label>
+          <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx">
+          <button id="apply-config">Aplicar configuración</button>
+        </div>
+        
+        <p style="margin-top: 12px; font-size: 12px; opacity: 0.7;">
+          💡 Para usar GitHub API, necesitas un <a href="https://github.com/settings/tokens" target="_blank">Personal Access Token</a> con permisos <code>repo</code>.
+        </p>
+      </div>
+    </div>
+    
+    <markdown-editor 
+      id="editor"
+      storage-mode="local"
+    ></markdown-editor>
+    
+    <div class="status-bar" id="status-bar">
+      <strong>Estado:</strong> Listo. Haz clic en 📁 para abrir el explorador de archivos.
+    </div>
   </div>
   
   <script type="module" src="./src/editor.js"></script>
   <script>
     const editor = document.getElementById('editor');
+    const statusBar = document.getElementById('status-bar');
+    const storageModeSelect = document.getElementById('storage-mode');
+    const githubRepoInput = document.getElementById('github-repo');
+    const githubTokenInput = document.getElementById('github-token');
+    const applyConfigBtn = document.getElementById('apply-config');
     
-    // Cargar automáticamente el archivo de ejemplo al inicio
-    setTimeout(() => {
-      editor.loadFileFromRepo('./content/ejemplo-completo.md');
-    }, 500);
+    // Actualizar estado
+    function updateStatus(message, type = 'info') {
+      const colors = {
+        info: '#0066cc',
+        success: '#28a745',
+        error: '#dc3545',
+        warning: '#ffc107'
+      };
+      statusBar.innerHTML = `<strong style="color: ${colors[type]}">Estado:</strong> ${message}`;
+    }
     
-    // Escuchar eventos
-    editor.addEventListener('save', (e) => {
-      console.log('Contenido guardado:', e.detail);
+    // Aplicar configuración
+    applyConfigBtn.addEventListener('click', () => {
+      const storageMode = storageModeSelect.value;
+      const githubRepo = githubRepoInput.value.trim();
+      const githubToken = githubTokenInput.value.trim();
+      
+      // Actualizar atributos del editor
+      editor.setAttribute('storage-mode', storageMode);
+      
+      if (githubRepo) {
+        editor.setAttribute('github-repo', githubRepo);
+      }
+      
+      // Si hay token, pasarlo al file-explorer
+      if (githubToken && (storageMode === 'github' || storageMode === 'hybrid')) {
+        const fileExplorer = editor.shadowRoot.querySelector('file-explorer');
+        if (fileExplorer) {
+          fileExplorer.setGitHubToken(githubToken);
+        }
+        updateStatus(`Configuración aplicada: ${storageMode} con repositorio ${githubRepo}`, 'success');
+      } else {
+        updateStatus(`Configuración aplicada: ${storageMode}`, 'success');
+      }
+    });
+    
+    // Escuchar eventos del editor
+    editor.addEventListener('file-loaded', (e) => {
+      updateStatus(`Archivo cargado: ${e.detail.path}`, 'success');
+    });
+    
+    editor.addEventListener('file-created', (e) => {
+      updateStatus(`Archivo creado: ${e.detail.file.name}`, 'success');
+    });
+    
+    editor.addEventListener('file-updated', (e) => {
+      updateStatus(`Archivo actualizado: ${e.detail.file.name}`, 'success');
+    });
+    
+    editor.addEventListener('file-deleted', (e) => {
+      updateStatus(`Archivo eliminado: ${e.detail.file.name}`, 'warning');
+    });
+    
+    editor.addEventListener('file-saved', (e) => {
+      updateStatus(`Archivo guardado: ${e.detail.path}`, 'success');
     });
     
     editor.addEventListener('change', (e) => {
-      console.log('Contenido modificado:', e.detail.dirty);
+      if (e.detail.dirty) {
+        updateStatus('Contenido modificado (sin guardar)', 'warning');
+      }
     });
     
-    editor.addEventListener('file-loaded', (e) => {
-      console.log('Archivo cargado:', e.detail.path);
+    editor.addEventListener('error', (e) => {
+      updateStatus(`Error: ${e.detail.message}`, 'error');
     });
+    
+    // Cargar configuración guardada
+    const savedConfig = localStorage.getItem('md-editor-config');
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig);
+        if (config.storageMode) storageModeSelect.value = config.storageMode;
+        if (config.githubRepo) githubRepoInput.value = config.githubRepo;
+      } catch (e) {
+        console.error('Error loading saved config:', e);
+      }
+    }
+    
+    // Guardar configuración al cambiar
+    function saveConfig() {
+      const config = {
+        storageMode: storageModeSelect.value,
+        githubRepo: githubRepoInput.value.trim()
+      };
+      localStorage.setItem('md-editor-config', JSON.stringify(config));
+    }
+    
+    storageModeSelect.addEventListener('change', saveConfig);
+    githubRepoInput.addEventListener('change', saveConfig);
   </script>
 </body>
 </html>
